@@ -2,64 +2,96 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>キャラアニメーションエディター</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
+  <title>キャラアニメーション</title>
   <style>
     body {
       font-family: sans-serif;
-      background: #f8f8f8;
-      padding: 1em;
       text-align: center;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
     }
     canvas {
+      background: #fff;
       border: 1px solid #ccc;
-      background: white;
-      cursor: pointer;
+      margin-top: 10px;
+      touch-action: none;
     }
-    .controls {
+    .panel {
       margin-top: 10px;
     }
-    .controls input, .controls button {
-      margin: 0.3em;
+    input[type="file"] {
+      margin: 2px;
+    }
+    button {
+      margin: 5px;
+      padding: 5px 10px;
     }
   </style>
 </head>
 <body>
-  <h2>キャラアニメーションエディター</h2>
-  <canvas id="canvas" width="600" height="400"></canvas>
-  <div class="controls">
-    <label>画像アップロード：
-      <input type="file" id="imageInput" multiple />
-    </label><br>
-    <label>パーツ名：
-      <select id="partSelect">
-        <option value="head">頭</option>
-        <option value="body">体</option>
-        <option value="tail">しっぽ</option>
-        <option value="wing1">羽1</option>
-        <option value="wing2">羽2</option>
-        <option value="arm1">手1</option>
-        <option value="arm2">手2</option>
-        <option value="leg1">足1</option>
-        <option value="leg2">足2</option>
-      </select>
-    </label>
-    <button id="saveBtn">保存</button>
-    <input type="file" id="loadInput" accept=".json" />
-    <button id="animateBtn">アニメーション</button>
+  <h2>キャラアニメーションエディタ</h2>
+
+  <div class="panel">
+    パーツアップロード:<br>
+    <input type="file" id="part-body" accept="image/*">体
+    <input type="file" id="part-head" accept="image/*">頭
+    <input type="file" id="part-tail" accept="image/*">しっぽ
+    <input type="file" id="part-wing1" accept="image/*">羽1
+    <input type="file" id="part-wing2" accept="image/*">羽2
+    <input type="file" id="part-leg1" accept="image/*">足1
+    <input type="file" id="part-leg2" accept="image/*">足2
+    <input type="file" id="part-leg3" accept="image/*">足3
+    <input type="file" id="part-leg4" accept="image/*">足4
   </div>
 
+  <div class="panel">
+    <button onclick="saveParts()">保存</button>
+    <button onclick="loadParts()">読み込み</button>
+    <button onclick="startAnimation()">アニメ再生</button>
+  </div>
+
+  <canvas id="canvas" width="600" height="400"></canvas>
+
   <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const parts = {};
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const parts = {}; // name: { img, x, y, angle }
     let currentDrag = null, offsetX = 0, offsetY = 0;
 
+    const partNames = [
+      "body", "head", "tail", "wing1", "wing2",
+      "leg1", "leg2", "leg3", "leg4"
+    ];
+
+    // アップロード処理
+    partNames.forEach(name => {
+      const input = document.getElementById(`part-${name}`);
+      input.addEventListener("change", e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = () => {
+          parts[name] = {
+            img,
+            x: 100 + Math.random() * 300,
+            y: 100 + Math.random() * 200,
+            angle: 0
+          };
+          drawAll();
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    });
+
+    // 描画
     function drawAll() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const key in parts) {
+      for (const key of partNames) {
         const part = parts[key];
-        const { img, x, y, angle = 0 } = part;
+        if (!part) continue;
+        const { img, x, y, angle } = part;
         ctx.save();
         ctx.translate(x + img.width / 2, y + img.height / 2);
         ctx.rotate(angle * Math.PI / 180);
@@ -68,128 +100,145 @@
       }
     }
 
-    canvas.addEventListener('mousedown', e => {
-      const mx = e.offsetX, my = e.offsetY;
-      for (const key in parts) {
+    // ドラッグ
+    function getEventPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      if (e.touches) {
+        return {
+          x: e.touches[0].clientX - rect.left,
+          y: e.touches[0].clientY - rect.top
+        };
+      } else {
+        return {
+          x: e.offsetX,
+          y: e.offsetY
+        };
+      }
+    }
+
+    function handleDown(e) {
+      const { x, y } = getEventPos(e);
+      for (const key of partNames) {
         const part = parts[key];
-        const { img, x, y } = part;
-        if (mx >= x && mx <= x + img.width && my >= y && my <= y + img.height) {
+        if (!part) continue;
+        const { img } = part;
+        if (
+          x >= part.x &&
+          x <= part.x + img.width &&
+          y >= part.y &&
+          y <= part.y + img.height
+        ) {
           currentDrag = key;
-          offsetX = mx - x;
-          offsetY = my - y;
+          offsetX = x - part.x;
+          offsetY = y - part.y;
+          e.preventDefault();
           break;
         }
       }
-    });
+    }
 
-    canvas.addEventListener('mousemove', e => {
-      if (currentDrag) {
-        const mx = e.offsetX, my = e.offsetY;
-        parts[currentDrag].x = mx - offsetX;
-        parts[currentDrag].y = my - offsetY;
-        drawAll();
-      }
-    });
+    function handleMove(e) {
+      if (!currentDrag) return;
+      const { x, y } = getEventPos(e);
+      const part = parts[currentDrag];
+      part.x = x - offsetX;
+      part.y = y - offsetY;
+      drawAll();
+      e.preventDefault();
+    }
 
-    canvas.addEventListener('mouseup', () => currentDrag = null);
+    function handleUp() {
+      currentDrag = null;
+    }
 
-    document.getElementById('imageInput').addEventListener('change', e => {
-      const files = e.target.files;
-      const partName = document.getElementById('partSelect').value;
-      if (!files.length) return;
-      const file = files[0];
-      const img = new Image();
-      img.onload = () => {
-        parts[partName] = {
-          img,
-          x: 100,
-          y: 100,
-          angle: 0
-        };
-        drawAll();
-      };
-      img.src = URL.createObjectURL(file);
-    });
+    canvas.addEventListener("mousedown", handleDown);
+    canvas.addEventListener("mousemove", handleMove);
+    canvas.addEventListener("mouseup", handleUp);
+    canvas.addEventListener("touchstart", handleDown, { passive: false });
+    canvas.addEventListener("touchmove", handleMove, { passive: false });
+    canvas.addEventListener("touchend", handleUp);
 
-    document.getElementById('saveBtn').addEventListener('click', () => {
-      const data = {};
+    // 保存
+    function saveParts() {
+      const saveData = {};
       for (const key in parts) {
-        data[key] = {
-          src: parts[key].img.src,
-          x: parts[key].x,
-          y: parts[key].y,
-          angle: parts[key].angle || 0
+        const p = parts[key];
+        saveData[key] = {
+          x: p.x,
+          y: p.y,
+          angle: p.angle,
+          src: p.img.src
         };
       }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = 'character_parts.json';
-      link.click();
-    });
+      localStorage.setItem("char_parts", JSON.stringify(saveData));
+      alert("保存しました");
+    }
 
-    document.getElementById('loadInput').addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const data = JSON.parse(reader.result);
-        const promises = [];
-        for (const key in data) {
-          const { src, x, y, angle } = data[key];
-          const img = new Image();
-          const p = new Promise(resolve => {
-            img.onload = () => {
-              parts[key] = { img, x, y, angle };
-              resolve();
-            };
-            img.src = src;
-          });
-          promises.push(p);
+    // 読み込み
+    function loadParts() {
+      const json = localStorage.getItem("char_parts");
+      if (!json) return alert("保存データがありません");
+      const saveData = JSON.parse(json);
+      let loaded = 0, total = Object.keys(saveData).length;
+      for (const key in saveData) {
+        const data = saveData[key];
+        const img = new Image();
+        img.onload = () => {
+          parts[key] = {
+            img,
+            x: data.x,
+            y: data.y,
+            angle: data.angle
+          };
+          loaded++;
+          if (loaded === total) drawAll();
+        };
+        img.src = data.src;
+      }
+    }
+
+    // アニメーション
+    function startAnimation() {
+      const duration = 1000;
+      const startTime = performance.now();
+
+      const baseStates = {};
+      for (const k of ["body", "head", "leg1", "leg2", "leg3", "leg4"]) {
+        if (parts[k]) baseStates[k] = { ...parts[k] };
+      }
+
+      function animate(time) {
+        const t = (time - startTime) / 1000; // 秒
+        if (t > 1.0) return drawAll();
+
+        const phase = t <= 0.4 ? "bend" : "restore";
+        const ratio = phase === "bend" ? t / 0.4 : (t - 0.4) / 0.6;
+
+        for (const k in baseStates) {
+          const p = parts[k];
+          const base = baseStates[k];
+
+          if (["body", "head"].includes(k)) {
+            p.angle = phase === "bend"
+              ? base.angle + 35 * ratio
+              : base.angle + 35 * (1 - ratio);
+            p.x = base.x + (phase === "bend" ? 5 * ratio : 5 * (1 - ratio));
+          }
+
+          if (k.startsWith("leg")) {
+            p.angle = phase === "bend"
+              ? base.angle + 30 * ratio
+              : base.angle + 30 * (1 - ratio);
+            p.x = base.x + (phase === "bend" ? -3 * ratio : -3 * (1 - ratio));
+          }
         }
-        Promise.all(promises).then(drawAll);
-      };
-      reader.readAsText(file);
-    });
 
-    document.getElementById('animateBtn').addEventListener('click', () => {
-      if (!parts.body || !parts.head) return;
-      const timeline = anime.timeline({
-        easing: 'easeInOutSine',
-        duration: 400,
-        autoplay: false,
-        update: drawAll
-      });
+        drawAll();
+        requestAnimationFrame(animate);
+      }
 
-      timeline.add({
-        targets: [parts.body, parts.head],
-        angle: 35,
-        x: el => el.x - 10,
-        y: el => el.y + 2
-      }).add({
-        targets: [parts.arm1, parts.arm2, parts.leg1, parts.leg2],
-        angle: 20,
-        x: el => el.x - 5,
-        y: el => el.y + 5,
-        offset: 0
-      });
-
-      timeline.add({
-        targets: [parts.body, parts.head],
-        angle: 0,
-        x: el => el.x + 20,
-        y: el => el.y - 2,
-        duration: 400
-      }).add({
-        targets: [parts.arm1, parts.arm2, parts.leg1, parts.leg2],
-        angle: 0,
-        x: el => el.x + 5,
-        y: el => el.y - 5,
-        offset: 400
-      });
-
-      timeline.play();
-    });
+      requestAnimationFrame(animate);
+    }
   </script>
 </body>
 </html>

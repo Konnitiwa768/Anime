@@ -2,94 +2,132 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>キャラアニメーション</title>
+  <title>キャラアニメーションエディタ</title>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      background: #f5f5f5;
-      margin: 0;
-      padding: 0;
-    }
-    canvas {
-      background: #fff;
-      border: 1px solid #ccc;
-      margin-top: 10px;
-      touch-action: none;
-    }
-    .panel {
-      margin-top: 10px;
-    }
-    input[type="file"] {
-      margin: 2px;
-    }
-    button {
-      margin: 5px;
-      padding: 5px 10px;
-    }
+    body { font-family: sans-serif; text-align: center; background: #f5f5f5; }
+    canvas { background: #fff; border: 1px solid #ccc; margin-top: 10px; touch-action: none; }
+    .panel { margin-top: 10px; }
+    input, button, select { margin: 4px; padding: 5px; }
   </style>
 </head>
 <body>
   <h2>キャラアニメーションエディタ</h2>
 
   <div class="panel">
-    パーツアップロード:<br>
-    <input type="file" id="part-body" accept="image/*">体
-    <input type="file" id="part-head" accept="image/*">頭
-    <input type="file" id="part-tail" accept="image/*">しっぽ
-    <input type="file" id="part-wing1" accept="image/*">羽1
-    <input type="file" id="part-wing2" accept="image/*">羽2
-    <input type="file" id="part-leg1" accept="image/*">足1
-    <input type="file" id="part-leg2" accept="image/*">足2
-    <input type="file" id="part-leg3" accept="image/*">足3
-    <input type="file" id="part-leg4" accept="image/*">足4
+    名前: <input type="text" id="charName">
+    <button onclick="createCharacter()">新規キャラ</button>
+    <select id="characterList" onchange="switchCharacter(this.value)"></select>
   </div>
 
   <div class="panel">
-    <button onclick="saveParts()">保存</button>
-    <button onclick="loadParts()">読み込み</button>
-    <button onclick="startAnimation()">アニメ再生</button>
+    パーツ:<br>
+    <input type="file" id="part-body">体
+    <input type="file" id="part-head">頭
+    <input type="file" id="part-tail">しっぽ
+    <input type="file" id="part-wing1">羽1
+    <input type="file" id="part-wing2">羽2
+    <input type="file" id="part-leg1">足1
+    <input type="file" id="part-leg2">足2
+    <input type="file" id="part-leg3">足3
+    <input type="file" id="part-leg4">足4
   </div>
 
-  <canvas id="canvas" width="600" height="400"></canvas>
+  <div class="panel">
+    <button onclick="saveCurrentCharacter()">保存</button>
+    <button onclick="loadCharacter()">読み込み</button>
+    <button onclick="startRandomWalk()">歩行開始</button>
+    <button onclick="toggleDrag()">ドラッグ切替</button>
+  </div>
+
+  <canvas id="canvas" width="640" height="480"></canvas>
 
   <script>
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
-
-    const parts = {}; // name: { img, x, y, angle }
+    const partNames = ["body", "head", "tail", "wing1", "wing2", "leg1", "leg2", "leg3", "leg4"];
+    const characters = {};
+    let currentChar = null;
     let currentDrag = null, offsetX = 0, offsetY = 0;
+    let allowDrag = true;
+    let walkInterval = null;
+    let walkTick = 0;
 
-    const partNames = [
-      "body", "head", "tail", "wing1", "wing2",
-      "leg1", "leg2", "leg3", "leg4"
-    ];
-
-    // アップロード処理
     partNames.forEach(name => {
-      const input = document.getElementById(`part-${name}`);
-      input.addEventListener("change", e => {
+      document.getElementById("part-" + name).addEventListener("change", e => {
         const file = e.target.files[0];
-        if (!file) return;
-        const img = new Image();
-        img.onload = () => {
-          parts[name] = {
-            img,
-            x: 100 + Math.random() * 300,
-            y: 100 + Math.random() * 200,
-            angle: 0
+        if (!file || !currentChar) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            characters[currentChar][name] = {
+              img,
+              base64: reader.result,
+              x: 150 + Math.random() * 100,
+              y: 150 + Math.random() * 100,
+              angle: 0
+            };
+            drawAll();
           };
-          drawAll();
+          img.src = reader.result;
         };
-        img.src = URL.createObjectURL(file);
+        reader.readAsDataURL(file);
       });
     });
 
-    // 描画
+    function createCharacter() {
+      const name = document.getElementById("charName").value.trim();
+      if (!name || characters[name]) return alert("キャラ名が無効または重複");
+      characters[name] = {};
+      currentChar = name;
+      updateCharacterList();
+    }
+
+    function updateCharacterList() {
+      const sel = document.getElementById("characterList");
+      sel.innerHTML = "";
+      for (let name in characters) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        if (name === currentChar) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    function switchCharacter(name) {
+      currentChar = name;
+      drawAll();
+    }
+
+    function saveCurrentCharacter() {
+      if (!currentChar) return;
+      localStorage.setItem("char_" + currentChar, JSON.stringify(characters[currentChar]));
+      alert("保存しました");
+    }
+
+    function loadCharacter() {
+      const name = currentChar;
+      const data = JSON.parse(localStorage.getItem("char_" + name));
+      if (!data) return alert("保存データがありません");
+      characters[name] = {};
+      let loaded = 0, total = Object.keys(data).length;
+      for (let key in data) {
+        const img = new Image();
+        img.onload = () => {
+          characters[name][key] = { ...data[key], img };
+          if (++loaded === total) drawAll();
+        };
+        img.src = data[key].base64;
+      }
+    }
+
     function drawAll() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const key of partNames) {
-        const part = parts[key];
+      if (!currentChar) return;
+      const char = characters[currentChar];
+      for (let key of partNames) {
+        const part = char[key];
         if (!part) continue;
         const { img, x, y, angle } = part;
         ctx.save();
@@ -100,144 +138,81 @@
       }
     }
 
-    // ドラッグ
-    function getEventPos(e) {
-      const rect = canvas.getBoundingClientRect();
-      if (e.touches) {
-        return {
-          x: e.touches[0].clientX - rect.left,
-          y: e.touches[0].clientY - rect.top
-        };
-      } else {
-        return {
-          x: e.offsetX,
-          y: e.offsetY
-        };
-      }
+    function toggleDrag() {
+      allowDrag = !allowDrag;
+      alert("ドラッグモード: " + (allowDrag ? "ON" : "OFF"));
     }
 
-    function handleDown(e) {
-      const { x, y } = getEventPos(e);
-      for (const key of partNames) {
-        const part = parts[key];
+    function getEventPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: e.touches ? e.touches[0].clientX - rect.left : e.offsetX,
+        y: e.touches ? e.touches[0].clientY - rect.top : e.offsetY
+      };
+    }
+
+    canvas.addEventListener("mousedown", startDrag);
+    canvas.addEventListener("mousemove", doDrag);
+    canvas.addEventListener("mouseup", () => currentDrag = null);
+    canvas.addEventListener("touchstart", startDrag, { passive: false });
+    canvas.addEventListener("touchmove", doDrag, { passive: false });
+    canvas.addEventListener("touchend", () => currentDrag = null);
+
+    function startDrag(e) {
+      if (!allowDrag || !currentChar) return;
+      const pos = getEventPos(e);
+      for (let key of partNames) {
+        const part = characters[currentChar][key];
         if (!part) continue;
-        const { img } = part;
-        if (
-          x >= part.x &&
-          x <= part.x + img.width &&
-          y >= part.y &&
-          y <= part.y + img.height
-        ) {
+        const img = part.img;
+        if (pos.x >= part.x && pos.x <= part.x + img.width &&
+            pos.y >= part.y && pos.y <= part.y + img.height) {
           currentDrag = key;
-          offsetX = x - part.x;
-          offsetY = y - part.y;
+          offsetX = pos.x - part.x;
+          offsetY = pos.y - part.y;
           e.preventDefault();
+          if (key === "head") {
+            part.angle += 45;
+            drawAll();
+            setTimeout(() => {
+              part.angle -= 45;
+              drawAll();
+            }, 300);
+          }
           break;
         }
       }
     }
 
-    function handleMove(e) {
-      if (!currentDrag) return;
-      const { x, y } = getEventPos(e);
-      const part = parts[currentDrag];
-      part.x = x - offsetX;
-      part.y = y - offsetY;
+    function doDrag(e) {
+      if (!allowDrag || !currentChar || !currentDrag) return;
+      const pos = getEventPos(e);
+      const part = characters[currentChar][currentDrag];
+      part.x = pos.x - offsetX;
+      part.y = pos.y - offsetY;
       drawAll();
-      e.preventDefault();
     }
 
-    function handleUp() {
-      currentDrag = null;
-    }
-
-    canvas.addEventListener("mousedown", handleDown);
-    canvas.addEventListener("mousemove", handleMove);
-    canvas.addEventListener("mouseup", handleUp);
-    canvas.addEventListener("touchstart", handleDown, { passive: false });
-    canvas.addEventListener("touchmove", handleMove, { passive: false });
-    canvas.addEventListener("touchend", handleUp);
-
-    // 保存
-    function saveParts() {
-      const saveData = {};
-      for (const key in parts) {
-        const p = parts[key];
-        saveData[key] = {
-          x: p.x,
-          y: p.y,
-          angle: p.angle,
-          src: p.img.src
-        };
-      }
-      localStorage.setItem("char_parts", JSON.stringify(saveData));
-      alert("保存しました");
-    }
-
-    // 読み込み
-    function loadParts() {
-      const json = localStorage.getItem("char_parts");
-      if (!json) return alert("保存データがありません");
-      const saveData = JSON.parse(json);
-      let loaded = 0, total = Object.keys(saveData).length;
-      for (const key in saveData) {
-        const data = saveData[key];
-        const img = new Image();
-        img.onload = () => {
-          parts[key] = {
-            img,
-            x: data.x,
-            y: data.y,
-            angle: data.angle
-          };
-          loaded++;
-          if (loaded === total) drawAll();
-        };
-        img.src = data.src;
-      }
-    }
-
-    // アニメーション
-    function startAnimation() {
-      const duration = 1000;
-      const startTime = performance.now();
-
-      const baseStates = {};
-      for (const k of ["body", "head", "leg1", "leg2", "leg3", "leg4"]) {
-        if (parts[k]) baseStates[k] = { ...parts[k] };
-      }
-
-      function animate(time) {
-        const t = (time - startTime) / 1000; // 秒
-        if (t > 1.0) return drawAll();
-
-        const phase = t <= 0.4 ? "bend" : "restore";
-        const ratio = phase === "bend" ? t / 0.4 : (t - 0.4) / 0.6;
-
-        for (const k in baseStates) {
-          const p = parts[k];
-          const base = baseStates[k];
-
-          if (["body", "head"].includes(k)) {
-            p.angle = phase === "bend"
-              ? base.angle + 35 * ratio
-              : base.angle + 35 * (1 - ratio);
-            p.x = base.x + (phase === "bend" ? 5 * ratio : 5 * (1 - ratio));
-          }
-
-          if (k.startsWith("leg")) {
-            p.angle = phase === "bend"
-              ? base.angle + 30 * ratio
-              : base.angle + 30 * (1 - ratio);
-            p.x = base.x + (phase === "bend" ? -3 * ratio : -3 * (1 - ratio));
+    function startRandomWalk() {
+      if (!currentChar) return;
+      if (walkInterval) clearInterval(walkInterval);
+      walkTick = 0;
+      walkInterval = setInterval(() => {
+        const char = characters[currentChar];
+        for (let key in char) {
+          const p = char[key];
+          if (p) {
+            p.x += Math.random() * 2 - 1;
+            p.y += Math.random() * 2 - 1;
+            if (key.startsWith("leg")) {
+              const direction = key.endsWith("1") || key.endsWith("3") ? 1 : -1;
+              p.angle = Math.sin(walkTick / 5) * 20 * direction;
+            }
           }
         }
-
+        walkTick++;
         drawAll();
-        requestAnimationFrame(animate);
-      }
-
-      requestAnimationFrame(animate);
+      }, 100);
     }
   </script>
 </body>

@@ -202,8 +202,8 @@
         for (let key in char) {
           const p = char[key];
           if (p) {
-            p.x += Math.random() * 10 - 1;
-            p.y += Math.random() * 10 - 1;
+            p.x += Math.random() * 9 - Math.random() * 11;
+            p.y += Math.random() * 9 - Math.random() * 11;
             if (key.startsWith("leg")) {
               const direction = key.endsWith("1") || key.endsWith("3") ? 1 : -1;
               p.angle = Math.sin(walkTick / 5) * 20 * direction;
